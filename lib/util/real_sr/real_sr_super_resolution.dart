@@ -32,6 +32,10 @@ class RealSrSuperResolution {
   static const String _binaryRepoBaseUrl =
       'https://github.com/deretame/breeze-binary/raw/main';
 
+  /// iOS ONNX 模型的 GitHub release 地址（asset 名含版本号，便于迭代）。
+  static const String _iosOnnxReleaseBaseUrl =
+      'https://github.com/Enigma-Soul/Breeze/releases/download/realsr-ios-onnx-v1';
+
   /// 最大并发超分任务数。
   ///
   /// - 桌面端（Windows / Linux / macOS）默认 2，高端显卡可设更高。
@@ -71,6 +75,7 @@ class RealSrSuperResolution {
   ///
   /// - Android：arm64-v8a
   /// - Windows / Linux / macOS：存在对应平台的 realcugan-ncnn-vulkan 可执行文件
+  /// - iOS：存在 ONNX 模型文件
   static Future<bool> get isAvailable async {
     if (Platform.isAndroid) {
       try {
@@ -85,14 +90,20 @@ class RealSrSuperResolution {
       return File(await _executablePath).existsSync();
     }
 
+    if (Platform.isIOS) {
+      final modelDir = await _modelDirectory;
+      return File(p.join(modelDir, 'realcugan-onnx', 'up2x-conservative-2x.onnx')).existsSync();
+    }
+
     return false;
   }
 
   /// 当前平台对应的 7z 压缩包文件名。
-  static String? get _desktopAssetName {
+  static String? get _archiveName {
     if (Platform.isWindows) return 'realsr-win.7z';
     if (Platform.isLinux) return 'realsr-linux.7z';
     if (Platform.isMacOS) return 'realsr-macos.7z';
+    if (Platform.isIOS) return 'realsr-ios-onnx-v1.7z';
     return null;
   }
 
@@ -103,12 +114,14 @@ class RealSrSuperResolution {
   static Future<void> downloadModel({
     void Function(int received, int total)? onProgress,
   }) async {
-    final assetName = _desktopAssetName;
+    final assetName = _archiveName;
     if (assetName == null) {
       throw UnsupportedError('当前平台不支持下载 RealSR 模型');
     }
 
-    final url = '$_binaryRepoBaseUrl/$assetName';
+    final url = Platform.isIOS
+        ? '$_iosOnnxReleaseBaseUrl/$assetName'
+        : '$_binaryRepoBaseUrl/$assetName';
     final cachePath = await getCachePath();
     final archivePath = p.join(cachePath, assetName);
     final destDir = await _modelDirectory;
@@ -127,7 +140,8 @@ class RealSrSuperResolution {
       await decompress7Z(archivePath: archivePath, destPath: destDir);
 
       // Linux / macOS 需要给可执行文件授权
-      if (!Platform.isWindows) {
+      // iOS 沙盒无 chmod 命令，且 ONNX 模型无需授权
+      if (!Platform.isWindows && !Platform.isIOS) {
         final exe = await _executablePath;
         try {
           await Process.run('chmod', ['+x', exe], runInShell: false);
