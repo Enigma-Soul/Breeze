@@ -599,14 +599,6 @@ jobs:
           sed -i '' 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' ios/Runner.xcodeproj/project.pbxproj
           fvm flutter build ios --release --no-codesign --split-debug-info=build/symbols
 
-      - name: 调试 onnxruntime modulemap（临时）
-        if: always()
-        run: |
-          echo "=== Podfile.lock onnxruntime ==="
-          grep -i onnxruntime ios/Podfile.lock 2>/dev/null || echo "(无 Podfile.lock)"
-          echo "=== onnxruntime modulemap ==="
-          find ios/Pods -iname "*onnxruntime*" \( -name "*.modulemap" -o -name "module.modulemap" \) -exec sh -c 'echo "--- $1 ---"; cat "$1" 2>/dev/null' _ {} \; 2>/dev/null | head -50
-
       - name: 封装 IPA
         run: |
           mkdir -p Payload
