@@ -34,7 +34,7 @@ class RealSrSuperResolution {
 
   /// iOS ONNX 模型的 GitHub release 地址（asset 名含版本号，便于迭代）。
   static const String _iosOnnxReleaseBaseUrl =
-      'https://github.com/Enigma-Soul/Breeze/releases/download/realsr-ios-onnx-v1';
+      'https://github.com/Enigma-Soul/Breeze/releases/download/realsr-ios-onnx-v2';
 
   /// 最大并发超分任务数。
   ///
@@ -92,7 +92,7 @@ class RealSrSuperResolution {
 
     if (Platform.isIOS) {
       final modelDir = await _modelDirectory;
-      return File(p.join(modelDir, 'realcugan-onnx', 'up2x-conservative-2x.onnx')).existsSync();
+      return File(p.join(modelDir, 'realcugan-onnx', 'up2x-conservative-2x-tile.onnx')).existsSync();
     }
 
     return false;
@@ -103,7 +103,7 @@ class RealSrSuperResolution {
     if (Platform.isWindows) return 'realsr-win.7z';
     if (Platform.isLinux) return 'realsr-linux.7z';
     if (Platform.isMacOS) return 'realsr-macos.7z';
-    if (Platform.isIOS) return 'realsr-ios-onnx-v1.7z';
+    if (Platform.isIOS) return 'realsr-ios-onnx-v2.7z';
     return null;
   }
 
