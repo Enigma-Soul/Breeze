@@ -30,6 +30,9 @@ flutter_ios_podfile_setup
 target 'Runner' do
   use_frameworks!
 
+  # ONNX Runtime iOS 推理后端（Phase 1 spike：验证 pod embed + runtime）。
+  pod 'onnxruntime-objc'
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
