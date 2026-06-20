@@ -1,11 +1,18 @@
 import Flutter
 import UIKit
 import Darwin
+import onnxruntime_objc
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private let memoryChannelName = "memory_monitor"
   private var memoryChannel: FlutterMethodChannel?
+
+  /// RealSR 超分通道名，与 Dart / Android 侧一致。
+  private let realSrChannelName = "realsr_super_resolution"
+
+  /// ONNX Runtime 环境（进程级单例，懒初始化）。
+  private static var ortEnv: ORTEnv?
 
   override func application(
     _ application: UIApplication,
@@ -17,6 +24,50 @@ import Darwin
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     setupMemoryChannel(pluginRegistry: engineBridge.pluginRegistry)
+    setupRealSrChannel(pluginRegistry: engineBridge.pluginRegistry)
+  }
+
+  /// 注册 RealSR 超分通道。
+  ///
+  /// Phase 1 spike：`upscale` 验证 onnxruntime-objc runtime（ORTEnv 初始化），
+  /// 真实推理待 Phase 3。
+  private func setupRealSrChannel(pluginRegistry: FlutterPluginRegistry) {
+    guard let registrar = pluginRegistry.registrar(forPlugin: realSrChannelName) else {
+      return
+    }
+
+    let channel = FlutterMethodChannel(
+      name: realSrChannelName,
+      binaryMessenger: registrar.messenger()
+    )
+
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "extractAssets":
+        // 骨架阶段：iOS 无需从 assets 解压模型，直接标记成功。
+        result(true)
+      case "upscale":
+        // Phase 1 spike：验证 onnxruntime-objc runtime（ORTEnv 初始化）。
+        // 真实推理（ORTSession + 模型 + tiling）待 Phase 3。
+        do {
+          if AppDelegate.ortEnv == nil {
+            AppDelegate.ortEnv = try ORTEnv(loggingLevel: .warning)
+          }
+          result([
+            "success": true,
+            "message": "onnxruntime runtime available",
+          ])
+        } catch {
+          result(FlutterError(
+            code: "ORT_INIT_FAILED",
+            message: "onnxruntime 初始化失败: \(error)",
+            details: nil
+          ))
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func setupMemoryChannel(pluginRegistry: FlutterPluginRegistry) {

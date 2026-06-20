@@ -188,6 +188,8 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
+  bool get _showModelManagement => _isDesktop || Platform.isIOS;
+
   Widget _buildContent(BuildContext context) {
     return ListView(
       children: [
@@ -319,7 +321,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
           ),
         ),
 
-        if (_isDesktop) ...[
+        if (_showModelManagement) ...[
           const SizedBox(height: 8),
           const Divider(height: 1, thickness: 0.3),
           _buildSectionTitle(context, '模型管理'),
