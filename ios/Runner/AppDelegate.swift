@@ -300,15 +300,24 @@ import ImageIO
   /// 查找模型文件路径。
   private func findModelPath() -> String? {
     let modelName = "super_resolution/realcugan-onnx/up2x-conservative-2x-tile.onnx"
-    let searchDirs: [FileManager.SearchPathDirectory] = [.cachesDirectory, .documentDirectory]
+    // Dart getFilePath() = ApplicationSupport/files；模型在 <AppSupport>/files/super_resolution/...
+    let searchDirs: [FileManager.SearchPathDirectory] = [
+      .applicationSupportDirectory, .cachesDirectory, .documentDirectory,
+    ]
 
     for dir in searchDirs {
       guard let base = NSSearchPathForDirectoriesInDomains(dir, .userDomainMask, true).first else {
         continue
       }
-      let modelPath = (base as NSString).appendingPathComponent(modelName)
-      if FileManager.default.fileExists(atPath: modelPath) {
-        return modelPath
+      // Dart getFilePath = AppSupport/files，模型路径 = base/files/super_resolution/...
+      let withFiles = (base as NSString).appendingPathComponent("files").appendingPathComponent(modelName)
+      if FileManager.default.fileExists(atPath: withFiles) {
+        return withFiles
+      }
+      // 兼容：直接 base/super_resolution/...
+      let direct = (base as NSString).appendingPathComponent(modelName)
+      if FileManager.default.fileExists(atPath: direct) {
+        return direct
       }
     }
     return nil
