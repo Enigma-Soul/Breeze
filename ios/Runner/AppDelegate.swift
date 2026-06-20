@@ -1,7 +1,7 @@
 import Flutter
 import UIKit
 import Darwin
-import onnxruntime
+import onnxruntime_objc
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
