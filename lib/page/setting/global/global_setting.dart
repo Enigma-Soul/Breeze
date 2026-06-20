@@ -47,7 +47,8 @@ class _GlobalSettingPageState extends State<GlobalSettingPage> {
     _loadImpellerConfig();
     _loadCacheSize();
     _loadDesktopCloseBehavior();
-    _realSrAvailable = isDesktop
+    // iOS 入口总显示（让用户能进设置下载模型）；isAvailable 仅控制能否真超分。
+    _realSrAvailable = (isDesktop || Platform.isIOS)
         ? Future.value(true)
         : RealSrSuperResolution.isAvailable;
   }
