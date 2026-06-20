@@ -17,7 +17,8 @@ import 'package:zephyr/widgets/toast.dart';
 
 /// Breeze 内置 RealSR / Real-CUGAN CLI 超分封装
 ///
-/// - Android：通过 MethodChannel 调用原生 CLI
+/// - Android / iOS：通过 MethodChannel 调用原生实现
+///   （iOS 通道已注册为骨架，推理后端待后续 PR 接入）
 /// - Windows / Linux / macOS：从 `deretame/breeze-binary` 下载模型后，
 ///   调用 `getFilePath()/super_resolution/` 下的 realcugan-ncnn-vulkan
 class RealSrSuperResolution {
@@ -247,7 +248,7 @@ class RealSrSuperResolution {
             '${p.basenameWithoutExtension(inputPath)}_sr.png',
           );
 
-      if (Platform.isAndroid) {
+      if (Platform.isAndroid || Platform.isIOS) {
         final rawExt = await detectImageExtension(inputFile);
         final inputExtension = rawExt.startsWith('.')
             ? rawExt.substring(1)

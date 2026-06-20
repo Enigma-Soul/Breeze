@@ -7,6 +7,9 @@ import Darwin
   private let memoryChannelName = "memory_monitor"
   private var memoryChannel: FlutterMethodChannel?
 
+  /// RealSR 超分通道名，与 Dart / Android 侧一致。
+  private let realSrChannelName = "realsr_super_resolution"
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -17,6 +20,39 @@ import Darwin
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     setupMemoryChannel(pluginRegistry: engineBridge.pluginRegistry)
+    setupRealSrChannel(pluginRegistry: engineBridge.pluginRegistry)
+  }
+
+  /// 注册 RealSR 超分通道。
+  ///
+  /// 骨架阶段：通道已注册但不实现推理。`upscale` 返回明确错误，
+  /// 待后续 PR 接入推理后端（waifu2x-ios / ONNX Runtime）。
+  private func setupRealSrChannel(pluginRegistry: FlutterPluginRegistry) {
+    guard let registrar = pluginRegistry.registrar(forPlugin: realSrChannelName) else {
+      return
+    }
+
+    let channel = FlutterMethodChannel(
+      name: realSrChannelName,
+      binaryMessenger: registrar.messenger()
+    )
+
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "extractAssets":
+        // 骨架阶段：iOS 无需从 assets 解压模型，直接标记成功。
+        result(true)
+      case "upscale":
+        // 骨架阶段：推理后端待后续 PR 实现，返回明确错误而非空结果。
+        result(FlutterError(
+          code: "UPSCALE_NOT_IMPLEMENTED",
+          message: "iOS 超分推理后端待后续 PR 实现",
+          details: nil
+        ))
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   private func setupMemoryChannel(pluginRegistry: FlutterPluginRegistry) {
