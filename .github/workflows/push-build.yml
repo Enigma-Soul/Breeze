@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat-ios # 临时：验证 iOS 编译，合并前移除
   workflow_dispatch:
 
 permissions:
@@ -19,6 +20,7 @@ jobs:
   # 1. Android 构建
   # ══════════════════════════════════════════
   build-android:
+    if: github.ref != 'refs/heads/feat-ios' # 临时：feat-ios 只验 iOS
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -141,6 +143,7 @@ jobs:
   # 2. Linux 构建
   # ══════════════════════════════════════════
   build-linux:
+    if: github.ref != 'refs/heads/feat-ios' # 临时：feat-ios 只验 iOS
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -210,6 +213,7 @@ jobs:
   # 3. Windows 构建
   # ══════════════════════════════════════════
   build-windows:
+    if: github.ref != 'refs/heads/feat-ios' # 临时：feat-ios 只验 iOS
     runs-on: windows-2025-vs2026
     steps:
       - name: 关闭 Git CRLF 转换
@@ -336,6 +340,7 @@ jobs:
   # 4. macOS 构建
   # ══════════════════════════════════════════
   build-macos:
+    if: github.ref != 'refs/heads/feat-ios' # 临时：feat-ios 只验 iOS
     strategy:
       fail-fast: false
       matrix:
