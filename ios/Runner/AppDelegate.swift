@@ -413,7 +413,7 @@ import ImageIO
         let srcX = reflectCoordinate(x + pp - dx, size: width)
         let srcY = reflectCoordinate(y + dy, size: height)
         let dstIdx = (pp + dy) * AppDelegate.tileSize + dx
-        copyPixel(floats, (srcY * width + srcX) * 3, result, dstIdx, nchwStride)
+        copyPixel(floats, (srcY * width + srcX) * 3, &result, dstIdx, nchwStride)
       }
     }
 
@@ -423,7 +423,7 @@ import ImageIO
         let srcX = reflectCoordinate(x + cs - 1 - dx, size: width)
         let srcY = reflectCoordinate(y + dy, size: height)
         let dstIdx = (pp + dy) * AppDelegate.tileSize + (pp + cs + dx)
-        copyPixel(floats, (srcY * width + srcX) * 3, result, dstIdx, nchwStride)
+        copyPixel(floats, (srcY * width + srcX) * 3, &result, dstIdx, nchwStride)
       }
     }
 
@@ -433,7 +433,7 @@ import ImageIO
         let srcX = reflectCoordinate(x + dx - pp, size: width)
         let srcY = reflectCoordinate(y + pp - dy, size: height)
         let dstIdx = dy * AppDelegate.tileSize + dx
-        copyPixel(floats, (srcY * width + srcX) * 3, result, dstIdx, nchwStride)
+        copyPixel(floats, (srcY * width + srcX) * 3, &result, dstIdx, nchwStride)
       }
     }
 
@@ -443,7 +443,7 @@ import ImageIO
         let srcX = reflectCoordinate(x + dx - pp, size: width)
         let srcY = reflectCoordinate(y + cs - 1 - dy, size: height)
         let dstIdx = (pp + cs + dy) * AppDelegate.tileSize + dx
-        copyPixel(floats, (srcY * width + srcX) * 3, result, dstIdx, nchwStride)
+        copyPixel(floats, (srcY * width + srcX) * 3, &result, dstIdx, nchwStride)
       }
     }
   }
@@ -478,7 +478,7 @@ import ImageIO
     ) else { return nil }
 
     guard let outputs = try? session.run(
-      inputs: ["input": tensor], outputNames: ["output"], runOptions: try ORTRunOptions()
+      withInputs: ["input": tensor], outputNames: ["output"], runOptions: try ORTRunOptions()
     ) else { return nil }
 
     guard let out = outputs["output"],
@@ -532,7 +532,7 @@ import ImageIO
   /// 保存 CGImage 为 PNG 文件。
   private func saveCGImage(cgImage: CGImage, to path: String) -> Bool {
     guard let dest = CGImageDestinationCreateWithURL(
-      URL(fileURLWithPath: path) as CFURL, kUTTypePNG, 1, nil
+      URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil
     ) else { return false }
 
     CGImageDestinationAddImage(dest, cgImage, nil)
