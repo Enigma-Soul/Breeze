@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pool/pool.dart';
+import 'package:uuid/uuid.dart';
 import 'package:zephyr/main.dart';
 import 'package:zephyr/page/comic_info/method/export_comic.dart';
 import 'package:zephyr/src/rust/api/image.dart';
@@ -24,14 +25,17 @@ import 'package:zephyr/widgets/toast.dart';
 /// - Android：通过 MethodChannel 调用原生后端
 /// - iOS：ort（.onnx + CoreML EP）或 CoreML 后端，用户可选
 /// - macOS：CoreML（`CoreMLUpscale` + 用户选择的模型）
-/// - Windows / Linux：ort crate（load-dynamic 外挂 onnxruntime 动态库，
-///   Real-CUGAN .onnx tile 推理，DirectML / CUDA EP）
+/// - Windows / Linux：ort crate（.onnx + DirectML/CUDA EP）或上游 ncnn-vulkan，用户可选
 class RealSrSuperResolution {
   RealSrSuperResolution._();
 
   static const MethodChannel _channel = MethodChannel(
     'realsr_super_resolution',
   );
+
+  /// GitHub 上存放桌面端 ncnn 模型压缩包的仓库（上游 ncnn 后端）。
+  static const String _binaryRepoBaseUrl =
+      'https://github.com/deretame/breeze-binary/raw/main';
 
   /// ort 后端（Real-CUGAN .onnx tile，iOS / 桌面通用）的 GitHub release 地址。
   static const String _ortModelReleaseBaseUrl =
@@ -71,6 +75,14 @@ class RealSrSuperResolution {
     return p.join(await getFilePath(), 'super_resolution');
   }
 
+  static String get _executableName => Platform.isWindows
+      ? 'realcugan-ncnn-vulkan.exe'
+      : 'realcugan-ncnn-vulkan';
+
+  static Future<String> get _executablePath async {
+    return p.join(await _modelDirectory, _executableName);
+  }
+
   /// ort 后端模型绝对路径：
   /// `<getFilePath()>/super_resolution/realcugan-onnx/up2x-conservative-2x-tile.onnx`
   ///（iOS AppDelegate `findModelPath()` 与桌面 Rust upscale 共用）。
@@ -92,7 +104,7 @@ class RealSrSuperResolution {
   /// - Android：arm64-v8a
   /// - iOS：ort（.onnx）或 CoreML 模型就绪（取决于后端选择）
   /// - macOS：CoreML 模型已下载并解压
-  /// - Windows / Linux：ort 的 .onnx 模型 + onnxruntime 动态库就绪
+  /// - Windows / Linux：ncnn 可执行文件，或 ort 的 .onnx 模型 + onnxruntime 动态库（取决于后端）
   static Future<bool> get isAvailable async {
     if (Platform.isAndroid) {
       try {
@@ -117,6 +129,10 @@ class RealSrSuperResolution {
     }
 
     if (Platform.isWindows || Platform.isLinux) {
+      final backend = await RealSrSettings.loadDesktopBackend();
+      if (backend == RealSrSettings.desktopBackendNcnn) {
+        return File(await _executablePath).existsSync();
+      }
       // ort 后端：.onnx 模型 + onnxruntime 动态库 都要就绪。
       return File(await _ortModelPath).existsSync() &&
           File(_ortDylibPath).existsSync();
@@ -138,11 +154,18 @@ class RealSrSuperResolution {
     return results.every((e) => e);
   }
 
+  /// 当前平台对应的 ncnn 7z 压缩包文件名（仅 ncnn 后端用）。
+  static String? get _desktopAssetName {
+    if (Platform.isWindows) return 'realsr-win.7z';
+    if (Platform.isLinux) return 'realsr-linux.7z';
+    return null;
+  }
+
   /// 下载并解压当前平台需要的超分模型。
   ///
   /// - iOS：ort 后端下 Real-CUGAN .onnx；CoreML 后端下 `MacOS-iOS.7z`。
   /// - macOS：下载 `MacOS-iOS.7z` 并解压 CoreML 模型。
-  /// - Windows / Linux：下载 Real-CUGAN .onnx tile 模型（ort 后端）。
+  /// - Windows / Linux：ncnn 后端下 realcugan-ncnn-vulkan；ort 后端下 Real-CUGAN .onnx。
   ///
   /// [force] 为 true 时，会先删除本地已有模型再重新下载。
   static Future<void> downloadModel({
@@ -177,8 +200,13 @@ class RealSrSuperResolution {
       return;
     }
 
-    // 桌面（Windows / Linux）：ort .onnx tile 模型，复用 iOS ort release。
-    await _downloadOrtModel(force: force, onProgress: onProgress);
+    // 桌面（Windows / Linux）：按后端选 ncnn 或 ort 模型。
+    final backend = await RealSrSettings.loadDesktopBackend();
+    if (backend == RealSrSettings.desktopBackendNcnn) {
+      await _downloadNcnnModel(force: force, onProgress: onProgress);
+    } else {
+      await _downloadOrtModel(force: force, onProgress: onProgress);
+    }
   }
 
   /// ort 后端（iOS / 桌面）下载 Real-CUGAN .onnx tile 模型（release realsr-ios-onnx-v2）。
@@ -207,6 +235,55 @@ class RealSrSuperResolution {
         },
       );
       await decompress7Z(archivePath: archivePath, destPath: destDir);
+      _missingModelNotified = false;
+      showSuccessToast('模型下载完成');
+    } finally {
+      try {
+        await File(archivePath).delete();
+      } catch (_) {}
+    }
+  }
+
+  /// 桌面 ncnn 后端：下载 realcugan-ncnn-vulkan（realsr-win/linux.7z，上游 binary repo）。
+  static Future<void> _downloadNcnnModel({
+    required bool force,
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final assetName = _desktopAssetName;
+    if (assetName == null) {
+      throw UnsupportedError('当前平台不支持 ncnn 后端');
+    }
+    final url = '$_binaryRepoBaseUrl/$assetName';
+    final cachePath = await getCachePath();
+    final archivePath = p.join(cachePath, assetName);
+    final destDir = await _modelDirectory;
+
+    if (force && Directory(destDir).existsSync()) {
+      await Directory(destDir).delete(recursive: true);
+    }
+    await Directory(destDir).create(recursive: true);
+
+    try {
+      if (force && File(archivePath).existsSync()) {
+        await File(archivePath).delete();
+      }
+      await dio.download(
+        url,
+        archivePath,
+        onReceiveProgress: (received, total) {
+          if (total > 0) onProgress?.call(received, total);
+        },
+      );
+      await decompress7Z(archivePath: archivePath, destPath: destDir);
+      // Linux 需给可执行文件授权
+      if (!Platform.isWindows) {
+        final exe = await _executablePath;
+        try {
+          await Process.run('chmod', ['+x', exe], runInShell: false);
+        } catch (e, s) {
+          logger.w('RealSR 可执行文件授权失败: $exe', error: e, stackTrace: s);
+        }
+      }
       _missingModelNotified = false;
       showSuccessToast('模型下载完成');
     } finally {
@@ -361,13 +438,26 @@ class RealSrSuperResolution {
       } else if (Platform.isMacOS) {
         await _upscaleCoreML(inputPath: inputPath, outputPath: out);
       } else {
-        // Windows / Linux：ort crate（FRB）超分。
-        await upscaleOrt(
-          inputPath: inputPath,
-          outputPath: out,
-          modelPath: await _ortModelPath,
-          dylibPath: _ortDylibPath,
-        );
+        // Windows / Linux：按后端选 ncnn CLI 或 ort crate。
+        final backend = await RealSrSettings.loadDesktopBackend();
+        if (backend == RealSrSettings.desktopBackendNcnn) {
+          await _upscaleCli(
+            inputPath: inputPath,
+            outputPath: out,
+            modelDir: modelDir,
+            scale: scale,
+            noiseLevel: noiseLevel,
+            tileSize: tileSize,
+            syncGapMode: syncGapMode,
+          );
+        } else {
+          await upscaleOrt(
+            inputPath: inputPath,
+            outputPath: out,
+            modelPath: await _ortModelPath,
+            dylibPath: _ortDylibPath,
+          );
+        }
       }
 
       final endAt = DateTime.now();
@@ -414,6 +504,73 @@ class RealSrSuperResolution {
       final stderr = result['stderr'] as String? ?? 'unknown';
       showErrorToast('ort 超分失败: $stderr');
       throw StateError('ort 超分失败: $stderr');
+    }
+  }
+
+  /// 桌面端通过 Process.run 调用 realcugan-ncnn-vulkan（ncnn 后端）。
+  static Future<void> _upscaleCli({
+    required String inputPath,
+    required String outputPath,
+    required String modelDir,
+    required int scale,
+    required RealSrNoiseLevel noiseLevel,
+    required int tileSize,
+    required int syncGapMode,
+  }) async {
+    final modelRoot = await _modelDirectory;
+    final exe = await _executablePath;
+    final cachePath = await getCachePath();
+    final workDir = Directory(
+      p.normalize(p.join(cachePath, 'realsr-upscale', const Uuid().v4())),
+    );
+
+    try {
+      await workDir.create(recursive: true);
+
+      // realcugan-ncnn 根据后缀判断输入格式，用真实扩展名避免格式错配导致花图。
+      final rawExt = await detectImageExtension(File(inputPath));
+      final inputExt = rawExt.startsWith('.') ? rawExt.substring(1) : rawExt;
+      final tempInput = p.join(
+        workDir.path,
+        'input.${inputExt.isEmpty ? 'png' : inputExt}',
+      );
+      final tempOutput = p.join(workDir.path, 'output.png');
+      await File(inputPath).copy(tempInput);
+
+      final modelPath = p.join(modelRoot, modelDir);
+      final result = await Process.run(
+        exe,
+        [
+          '-i',
+          tempInput,
+          '-o',
+          tempOutput,
+          '-m',
+          modelPath,
+          '-s',
+          scale.toString(),
+          '-n',
+          noiseLevel.value.toString(),
+          '-t',
+          tileSize.toString(),
+          '-c',
+          syncGapMode.toString(),
+        ],
+        runInShell: false,
+        workingDirectory: modelRoot,
+      );
+
+      if (result.exitCode != 0) {
+        throw StateError(
+          'RealSR CLI 失败 (exitCode=${result.exitCode})\n'
+          'stdout: ${result.stdout}\nstderr: ${result.stderr}',
+        );
+      }
+      await File(tempOutput).copy(outputPath);
+    } finally {
+      if (workDir.existsSync()) {
+        workDir.deleteSync(recursive: true);
+      }
     }
   }
 }

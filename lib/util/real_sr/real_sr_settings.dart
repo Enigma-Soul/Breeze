@@ -22,12 +22,19 @@ class RealSrSettings {
   static const _keyCoreMLFamily = 'realsr_coreml_family';
   static const _keyCoreMLVariant = 'realsr_coreml_variant';
   static const _keyIosBackend = 'realsr_ios_backend';
+  static const _keyDesktopBackend = 'realsr_desktop_backend';
 
   /// iOS 超分后端选项。
   /// - [iosBackendCoreML]：上游 CoreML（waifu2x / Real-CUGAN，原生 ANE 加速）
   /// - [iosBackendOrt]：ONNX Runtime（Real-CUGAN .onnx + CoreML EP，灵活可跑 LaMa 等 DFT 模型）
   static const iosBackendCoreML = 'coreml';
   static const iosBackendOrt = 'ort';
+
+  /// 桌面（Windows / Linux）超分后端选项。
+  /// - [desktopBackendNcnn]：上游 ncnn-vulkan（realcugan-ncnn-vulkan CLI）
+  /// - [desktopBackendOrt]：ONNX Runtime（Real-CUGAN .onnx + DirectML/CUDA EP）
+  static const desktopBackendNcnn = 'ncnn';
+  static const desktopBackendOrt = 'ort';
 
   /// 根据当前运行平台返回推荐的默认并发数。
   ///
@@ -149,5 +156,16 @@ class RealSrSettings {
   static Future<void> saveIosBackend(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyIosBackend, value);
+  }
+
+  /// 桌面（Windows / Linux）超分后端，默认 [desktopBackendOrt]（新 ort，灵活）。
+  static Future<String> loadDesktopBackend() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyDesktopBackend) ?? desktopBackendOrt;
+  }
+
+  static Future<void> saveDesktopBackend(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyDesktopBackend, value);
   }
 }

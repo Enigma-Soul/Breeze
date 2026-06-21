@@ -56,6 +56,9 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   /// iOS 推理后端（仅 iOS 生效；macOS 固定 CoreML）。
   String _iosBackend = RealSrSettings.iosBackendCoreML;
 
+  /// 桌面（Windows / Linux）推理后端（ort 或上游 ncnn）。
+  String _desktopBackend = RealSrSettings.desktopBackendOrt;
+
   bool _isAvailable = false;
   bool _downloading = false;
   double _downloadProgress = 0;
@@ -70,6 +73,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
     final family = await RealSrSettings.loadCoreMLFamily();
     final variant = await RealSrSettings.loadCoreMLVariant(family);
     final iosBackend = await RealSrSettings.loadIosBackend();
+    final desktopBackend = await RealSrSettings.loadDesktopBackend();
 
     final results = await Future.wait([
       RealSrSettings.loadAutoUpscale(),
@@ -92,6 +96,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
       _coreMLFamily = family;
       _coreMLVariant = variant;
       _iosBackend = iosBackend;
+      _desktopBackend = desktopBackend;
       _loading = false;
     });
   }
@@ -141,6 +146,12 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   Future<void> _setIosBackend(String value) async {
     await RealSrSettings.saveIosBackend(value);
     setState(() => _iosBackend = value);
+  }
+
+  Future<void> _setDesktopBackend(String value) async {
+    await RealSrSettings.saveDesktopBackend(value);
+    setState(() => _desktopBackend = value);
+    await _refreshAvailability();
   }
 
   Future<void> _downloadModel() async {
@@ -362,9 +373,39 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
             ),
           ),
 
+        // Windows / Linux：推理后端选择（ort ONNX/DirectML vs 上游 ncnn-vulkan）。
+        if (Platform.isWindows || Platform.isLinux)
+          ListTile(
+            leading: const Icon(Icons.memory_outlined),
+            title: const Text('推理后端'),
+            subtitle: const Text('ort 灵活可跑 LaMa 等；ncnn 上游 Vulkan GPU'),
+            trailing: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _desktopBackend,
+                icon: const Icon(Icons.expand_more),
+                onChanged: (String? value) {
+                  if (value != null) _setDesktopBackend(value);
+                },
+                items: const [
+                  DropdownMenuItem(
+                    value: RealSrSettings.desktopBackendOrt,
+                    child: Text('ort（ONNX）'),
+                  ),
+                  DropdownMenuItem(
+                    value: RealSrSettings.desktopBackendNcnn,
+                    child: Text('ncnn（上游 Vulkan）'),
+                  ),
+                ],
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+
         // iOS / macOS + CoreML 后端：模型族 + 变体 + 分块信息。
-        if (_usesCoreML &&
-            _iosBackend == RealSrSettings.iosBackendCoreML) ...[
+        if (_usesCoreML && _iosBackend == RealSrSettings.iosBackendCoreML) ...[
           ListTile(
             leading: const Icon(Icons.speed_outlined),
             title: const Text('模型'),
