@@ -52,6 +52,12 @@ pub fn upscale_ort(
             .with_execution_providers([ort::ep::DirectML::default().build()])
             .unwrap_or_else(|e| e.recover());
     }
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .with_execution_providers([ort::ep::CoreML::default().build()])
+            .unwrap_or_else(|e| e.recover());
+    }
 
     let mut session = builder
         .with_optimization_level(GraphOptimizationLevel::Level3)

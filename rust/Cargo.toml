@@ -67,8 +67,14 @@ jni = "0.22.4"
 rustls-platform-verifier = "0.7.0"
 ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "nnapi", "api-24"] }
 
-[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+[target.'cfg(target_os = "ios")'.dependencies]
 oslog = "0.2.0"
+
+# macOS：ort CoreML EP（load-dynamic 外挂 onnxruntime.framework，经 Podfile onnxruntime-coreml pod 引入）。
+# iOS 不加 ort（走 onnxruntime-objc + CoreML EP 不变），故 iOS/macOS 拆开。
+[target.'cfg(target_os = "macos")'.dependencies]
+oslog = "0.2.0"
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "coreml", "api-24"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(frb_expand)"] }

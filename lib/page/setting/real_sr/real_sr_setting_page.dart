@@ -62,6 +62,9 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   /// Android 推理后端（ort 或上游 ncnn）。
   String _androidBackend = RealSrSettings.androidBackendOrt;
 
+  /// macOS 推理后端（ort 或上游 CoreML）。
+  String _macosBackend = RealSrSettings.macosBackendCoreML;
+
   bool _isAvailable = false;
   bool _downloading = false;
   double _downloadProgress = 0;
@@ -78,6 +81,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
     final iosBackend = await RealSrSettings.loadIosBackend();
     final desktopBackend = await RealSrSettings.loadDesktopBackend();
     final androidBackend = await RealSrSettings.loadAndroidBackend();
+    final macosBackend = await RealSrSettings.loadMacosBackend();
 
     final results = await Future.wait([
       RealSrSettings.loadAutoUpscale(),
@@ -102,6 +106,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
       _iosBackend = iosBackend;
       _desktopBackend = desktopBackend;
       _androidBackend = androidBackend;
+      _macosBackend = macosBackend;
       _loading = false;
     });
   }
@@ -162,6 +167,12 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   Future<void> _setAndroidBackend(String value) async {
     await RealSrSettings.saveAndroidBackend(value);
     setState(() => _androidBackend = value);
+    await _refreshAvailability();
+  }
+
+  Future<void> _setMacosBackend(String value) async {
+    await RealSrSettings.saveMacosBackend(value);
+    setState(() => _macosBackend = value);
     await _refreshAvailability();
   }
 
@@ -245,6 +256,21 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   }
 
   bool get _usesCoreML => Platform.isIOS || Platform.isMacOS;
+
+  /// 当前是否显示 CoreML 模型族/变体 UI（iOS/macOS 且选了 CoreML 后端）。
+  /// 按平台查对应后端设置，避免 macOS 误读 iosBackend。
+  bool get _showsCoreMLModelUi {
+    if (Platform.isIOS) return _iosBackend == RealSrSettings.iosBackendCoreML;
+    if (Platform.isMacOS) return _macosBackend == RealSrSettings.macosBackendCoreML;
+    return false;
+  }
+
+  /// 当前是否为 Apple 平台 ort 后端（iOS/macOS 选了 ort 时显示说明 tile）。
+  bool get _isAppleOrtBackend {
+    if (Platform.isIOS) return _iosBackend == RealSrSettings.iosBackendOrt;
+    if (Platform.isMacOS) return _macosBackend == RealSrSettings.macosBackendOrt;
+    return false;
+  }
 
   Widget _buildContent(BuildContext context) {
     return ListView(
@@ -446,8 +472,39 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
             ),
           ),
 
+        // macOS：推理后端选择（ort ONNX/CoreML EP vs 上游 CoreML 原生）。
+        if (Platform.isMacOS)
+          ListTile(
+            leading: const Icon(Icons.memory_outlined),
+            title: const Text('推理后端'),
+            subtitle: const Text('CoreML 原生 ANE 最快；ort 灵活可跑 LaMa 等'),
+            trailing: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _macosBackend,
+                icon: const Icon(Icons.expand_more),
+                onChanged: (String? value) {
+                  if (value != null) _setMacosBackend(value);
+                },
+                items: const [
+                  DropdownMenuItem(
+                    value: RealSrSettings.macosBackendCoreML,
+                    child: Text('CoreML（原生）'),
+                  ),
+                  DropdownMenuItem(
+                    value: RealSrSettings.macosBackendOrt,
+                    child: Text('ort（ONNX）'),
+                  ),
+                ],
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+
         // iOS / macOS + CoreML 后端：模型族 + 变体 + 分块信息。
-        if (_usesCoreML && _iosBackend == RealSrSettings.iosBackendCoreML) ...[
+        if (_showsCoreMLModelUi) ...[
           ListTile(
             leading: const Icon(Icons.speed_outlined),
             title: const Text('模型'),
@@ -513,9 +570,8 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
               child: const Icon(Icons.help_outline),
             ),
           ),
-        ] else if (Platform.isIOS &&
-            _iosBackend == RealSrSettings.iosBackendOrt)
-          // iOS ort 后端：无模型族/变体选择，仅说明。
+        ] else if (_isAppleOrtBackend)
+          // iOS / macOS ort 后端：无模型族/变体选择，仅说明。
           ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('ort 后端'),

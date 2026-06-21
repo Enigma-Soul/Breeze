@@ -98,6 +98,17 @@ class RealSrSuperResolution {
     if (Platform.isAndroid) {
       return p.join(await _androidNativeLibDir, 'libonnxruntime.so');
     }
+    if (Platform.isMacOS) {
+      // MyApp.app/Contents/MacOS/App → Contents/Frameworks/onnxruntime.framework/onnxruntime
+      //（Podfile onnxruntime-coreml pod embed 的 framework；绝对路径 dlopen 直接用）。
+      final contents = p.dirname(p.dirname(Platform.resolvedExecutable));
+      return p.join(
+        contents,
+        'Frameworks',
+        'onnxruntime.framework',
+        'onnxruntime',
+      );
+    }
     final exeDir = p.dirname(Platform.resolvedExecutable);
     final name = Platform.isWindows ? 'onnxruntime.dll' : 'libonnxruntime.so';
     return p.join(exeDir, name);
@@ -139,6 +150,11 @@ class RealSrSuperResolution {
     }
 
     if (Platform.isMacOS) {
+      final backend = await RealSrSettings.loadMacosBackend();
+      if (backend == RealSrSettings.macosBackendOrt) {
+        return File(await _ortModelPath).existsSync() &&
+            File(await _ortDylibPath).existsSync();
+      }
       return _isCoreMLAvailable;
     }
 
@@ -196,9 +212,13 @@ class RealSrSuperResolution {
     void Function(int received, int total)? onProgress,
     bool force = false,
   }) async {
-    if (Platform.isIOS) {
-      final backend = await RealSrSettings.loadIosBackend();
-      if (backend == RealSrSettings.iosBackendOrt) {
+    // iOS / macOS 的 ort 后端下 Real-CUGAN .onnx；CoreML 后端走下面的 MacOS-iOS.7z。
+    if (Platform.isIOS || Platform.isMacOS) {
+      final isOrt = Platform.isIOS
+          ? await RealSrSettings.loadIosBackend() == RealSrSettings.iosBackendOrt
+          : await RealSrSettings.loadMacosBackend() ==
+                RealSrSettings.macosBackendOrt;
+      if (isOrt) {
         await _downloadOrtModel(force: force, onProgress: onProgress);
         return;
       }
@@ -469,7 +489,17 @@ class RealSrSuperResolution {
           await _upscaleCoreML(inputPath: inputPath, outputPath: out);
         }
       } else if (Platform.isMacOS) {
-        await _upscaleCoreML(inputPath: inputPath, outputPath: out);
+        final backend = await RealSrSettings.loadMacosBackend();
+        if (backend == RealSrSettings.macosBackendOrt) {
+          await upscaleOrt(
+            inputPath: inputPath,
+            outputPath: out,
+            modelPath: await _ortModelPath,
+            dylibPath: await _ortDylibPath,
+          );
+        } else {
+          await _upscaleCoreML(inputPath: inputPath, outputPath: out);
+        }
       } else {
         // Windows / Linux：按后端选 ncnn CLI 或 ort crate。
         final backend = await RealSrSettings.loadDesktopBackend();
