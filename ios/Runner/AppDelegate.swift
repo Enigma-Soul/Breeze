@@ -318,7 +318,9 @@ import ImageIO
         continue
       }
       // Dart getFilePath = AppSupport/files，模型路径 = base/files/super_resolution/...
-      let withFiles = (base as NSString).appendingPathComponent("files").appendingPathComponent(modelName)
+      // 单次 appendingPathComponent（多级路径内部用 / 拼接），避免 String.appendingPathComponent
+      // 在新 Xcode SDK 下要求 conformingTo 参数的编译错误。
+      let withFiles = (base as NSString).appendingPathComponent("files/\(modelName)")
       if FileManager.default.fileExists(atPath: withFiles) {
         return withFiles
       }
