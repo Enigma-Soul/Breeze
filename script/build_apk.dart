@@ -191,13 +191,15 @@ Future<Map<String, String>> _initializePaths() async {
 /// 与 build_windows.dart 的 _ortVersion 对齐。
 const String _ortAndroidVersion = '1.21.0';
 
-/// onnxruntime Android release（自带 NNAPI EP），GitHub release zip。
+/// onnxruntime Android（Maven Central AAR，自带 NNAPI EP）。
+/// 注意：Android 不发 GitHub release zip（404），官方经 Maven Central 分发 AAR
+/// （https://onnxruntime.ai/docs/install/#install-on-android）。AAR 本质是 zip，内含 `jni/<abi>/libonnxruntime.so`。
 final String _ortAndroidZipUrl =
-    'https://github.com/microsoft/onnxruntime/releases/download/v$_ortAndroidVersion/onnxruntime-android-$_ortAndroidVersion.zip';
+    'https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/$_ortAndroidVersion/onnxruntime-android-$_ortAndroidVersion.aar';
 
 /// 确保 android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so 就绪（ort NNAPI 后端依赖）。
-/// onnxruntime-android zip 内 .so 形如 `.../jni/arm64-v8a/libonnxruntime.so`（可能带版本前缀目录），
-/// 按后缀匹配兼容两种布局。zip 缓存到 build/bin，jniLibs 已在 .gitignore（不入库）。
+/// AAR 内 .so 形如 `jni/arm64-v8a/libonnxruntime.so`，按后缀匹配提取。AAR 缓存到 build/bin，
+/// jniLibs 已在 .gitignore（不入库）。
 Future<void> _ensureOrtAndroidLib(String projectRoot) async {
   final sep = Platform.pathSeparator;
   final jniLibsArm64 =
@@ -211,7 +213,7 @@ Future<void> _ensureOrtAndroidLib(String projectRoot) async {
   final binDir = '$projectRoot${sep}build${sep}bin';
   await Directory(binDir).create(recursive: true);
   final cachePath =
-      '$binDir${sep}onnxruntime-android-$_ortAndroidVersion.zip';
+      '$binDir${sep}onnxruntime-android-$_ortAndroidVersion.aar';
 
   if (!await File(cachePath).exists()) {
     _printColor('下载 onnxruntime-android（NNAPI）: $_ortAndroidZipUrl', _cyan);
@@ -245,7 +247,7 @@ Future<void> _ensureOrtAndroidLib(String projectRoot) async {
     }
   }
   if (soEntry == null) {
-    throw Exception('onnxruntime-android zip 中未找到 arm64-v8a/libonnxruntime.so');
+    throw Exception('onnxruntime-android AAR 中未找到 arm64-v8a/libonnxruntime.so');
   }
   await File(jniLibsArm64).parent.create(recursive: true);
   await File(jniLibsArm64).writeAsBytes(soEntry.content as List<int>);
