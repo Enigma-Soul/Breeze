@@ -512,53 +512,57 @@ import ImageIO
   }
 
   /// 复制 tile 输出到目标图（直贴）。
+  /// source 是 ort 输出 NCHW [3, sourceH, sourceW]；dest 是 HWC [destH, destW, 3]。
   private func copyTileOutput(
     source: [Float], sourceW: Int, sourceH: Int,
     dest: inout [Float], destW: Int, destH: Int,
     destX: Int, destY: Int, validW: Int, validH: Int
   ) {
+    let channelStride = sourceW * sourceH
     for y in 0..<validH {
-      let srcBaseY = y * sourceW * 3
-      let dstBaseY = (destY + y) * destW * 3
       for x in 0..<validW {
-        let srcIdx = srcBaseY + x * 3
-        let dstIdx = dstBaseY + (destX + x) * 3
-        dest[dstIdx] = source[srcIdx]
-        dest[dstIdx + 1] = source[srcIdx + 1]
-        dest[dstIdx + 2] = source[srcIdx + 2]
+        let dstIdx = ((destY + y) * destW + (destX + x)) * 3
+        for c in 0..<3 {
+          // NCHW: [c][y][x]
+          dest[dstIdx + c] = source[c * channelStride + y * sourceW + x]
+        }
       }
     }
   }
 
-  /// Float NCHW → CGImage（RGB 0-1 → clip 0-1 ×255 → uint8）。
+  /// Float HWC [height, width, 3] → CGImage（RGB 0-1 clip → uint8，补 alpha=255）。
+  /// 用 32bpp RGBA premultipliedLast（iOS CGContext 标准 bitmap，比 24bpp none alpha 稳）。
   private func floatsToCGImage(floats: [Float], width: Int, height: Int) -> CGImage? {
-    let bytesPerRow = width * 3
-    guard let data = CFDataCreateMutable(nil, height * bytesPerRow) else { return nil }
-
-    let ptr = CFDataGetMutableBytePtr(data)!
-    for i in 0..<(floats.count) {
-      ptr[i] = UInt8(max(0.0, min(1.0, floats[i])) * 255.0)
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+    for i in 0..<(width * height) {
+      pixels[i * 4 + 0] = UInt8(max(0.0, min(1.0, floats[i * 3 + 0])) * 255.0)
+      pixels[i * 4 + 1] = UInt8(max(0.0, min(1.0, floats[i * 3 + 1])) * 255.0)
+      pixels[i * 4 + 2] = UInt8(max(0.0, min(1.0, floats[i * 3 + 2])) * 255.0)
+      pixels[i * 4 + 3] = 255
     }
-
-    guard let provider = CGDataProvider(data: data),
-          let cgImage = CGImage(
-            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 24,
-            bytesPerRow: bytesPerRow, space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
-            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
-          ) else { return nil }
-
-    return cgImage
+    guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
+    return CGImage(
+      width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+      provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+    )
   }
 
-  /// 保存 CGImage 为 PNG 文件。
+  /// 保存 CGImage 为 PNG 文件（UIImage.pngData 比 CGImageDestination 稳）。
   private func saveCGImage(cgImage: CGImage, to path: String) -> Bool {
-    guard let dest = CGImageDestinationCreateWithURL(
-      URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil
-    ) else { return false }
-
-    CGImageDestinationAddImage(dest, cgImage, nil)
-    return CGImageDestinationFinalize(dest)
+    let uiImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: .up)
+    guard let pngData = uiImage.pngData() else {
+      NSLog("[ORT] pngData 失败")
+      return false
+    }
+    do {
+      try pngData.write(to: URL(fileURLWithPath: path))
+      return true
+    } catch {
+      NSLog("[ORT] PNG 写入失败: \(error)")
+      return false
+    }
   }
 
   /// 从文件加载 CGImage。
