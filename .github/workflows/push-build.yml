@@ -442,6 +442,8 @@ jobs:
                 $_ += "      target.build_configurations.each do |config|\n        config.build_settings[\"MACOSX_DEPLOYMENT_TARGET\"] = \"11.0\"\n      end\n"
               end
             ' macos/Podfile
+            # onnxruntime-coreml 等新 pod 需刷新 spec 仓库，否则 "specs repository too out-of-date"
+            pod repo update
           fi
 
       - name: 编译 macOS 产物
