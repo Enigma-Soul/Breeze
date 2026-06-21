@@ -269,10 +269,7 @@ import ImageIO
             return
           }
 
-          guard let tileOutput = runInference(input: tileInput) else {
-            completion(failureResult("推理失败"))
-            return
-          }
+          let tileOutput = try runInference(input: tileInput)
 
           copyTileOutput(
             source: tileOutput, sourceW: AppDelegate.outputSize, sourceH: AppDelegate.outputSize,
@@ -482,26 +479,32 @@ import ImageIO
   }
 
   /// 运行 ONNX 推理（输入 NCHW [1,3,164,164]，输出 NCHW [1,3,256,256]）。
-  private func runInference(input: [Float]) -> [Float]? {
-    guard let session = AppDelegate.ortSession else { return nil }
+  /// throws 传播 ort 错误（session.run 失败原因），便于真机 failureResult 显示具体原因。
+  private func runInference(input: [Float]) throws -> [Float] {
+    guard let session = AppDelegate.ortSession else {
+      throw NSError(domain: "ORT", code: 1, userInfo: [NSLocalizedDescriptionKey: "ortSession 未初始化"])
+    }
 
     // 输入张量
     let inputCount = 3 * AppDelegate.tileSize * AppDelegate.tileSize
     let inputData = NSMutableData(length: inputCount * MemoryLayout<Float>.size)!
     inputData.mutableBytes.assumingMemoryBound(to: Float.self).assign(from: input, count: inputCount)
 
-    // ORTValue + 推理
-    guard let tensor = try? ORTValue(
+    // ORTValue（失败抛 ort 错误）
+    let tensor = try ORTValue(
       tensorData: inputData, elementType: .float,
       shape: [1, 3, AppDelegate.tileSize, AppDelegate.tileSize] as [NSNumber]
-    ) else { return nil }
+    )
 
-    guard let outputs = try? session.run(
+    // 推理：session.run 失败抛具体 ort 错误（如 CoreML EP 不支持某算子 / 数据校验失败）。
+    let outputs = try session.run(
       withInputs: ["input": tensor], outputNames: ["output"], runOptions: try ORTRunOptions()
-    ) else { return nil }
+    )
 
     guard let out = outputs["output"],
-          let outData = try? out.tensorData() else { return nil }
+          let outData = try? out.tensorData() else {
+      throw NSError(domain: "ORT", code: 3, userInfo: [NSLocalizedDescriptionKey: "输出张量读取失败"])
+    }
 
     let outPtr = outData.bytes.assumingMemoryBound(to: Float.self)
     let outCount = 3 * AppDelegate.outputSize * AppDelegate.outputSize

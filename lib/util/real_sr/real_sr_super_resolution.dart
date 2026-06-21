@@ -463,6 +463,13 @@ class RealSrSuperResolution {
       throw StateError('Platform channel returned null');
     }
     logger.d('ORT upscale result: $result');
+    // AppDelegate 失败时返回 success=false + stderr；不检查会静默保留原图（看似"没放大"）。
+    final success = result['success'] as bool? ?? false;
+    if (!success) {
+      final stderr = result['stderr'] as String? ?? 'unknown';
+      showErrorToast('ort 超分失败: $stderr');
+      throw StateError('ort 超分失败: $stderr');
+    }
   }
 
   /// 桌面端通过 Process.run 调用 realcugan-ncnn-vulkan。
