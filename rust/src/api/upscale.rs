@@ -32,7 +32,28 @@ pub fn upscale_ort(
         .with_context(|| format!("ort init 失败（dylib={}）", dylib_path))?
         .commit();
 
-    let mut session = Session::builder()?
+    let mut builder = Session::builder()?;
+
+    // 注册平台 EP（load-dynamic 下从外挂 onnxruntime 库查 EP 符号；库本身须带对应 EP build：
+    // Android release 自带 NNAPI、Windows DirectML nupkg 自带 DirectML）。
+    // 注册失败（EP 不可用）时 recover 到无该 EP 的 builder，ort 也会对单个不支持的算子回落 CPU。
+    //
+    // 注意按 target_os 门控而非 feature：nnapi/directml 是 ort 依赖的 feature（Cargo.toml 经
+    // target-specific dep 激活），不是 windcore 自身 feature，cfg(feature=...) 在本 crate 恒为 false。
+    #[cfg(target_os = "android")]
+    {
+        builder = builder
+            .with_execution_providers([ort::ep::NNAPI::default().build()])
+            .unwrap_or_else(|e| e.recover());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        builder = builder
+            .with_execution_providers([ort::ep::DirectML::default().build()])
+            .unwrap_or_else(|e| e.recover());
+    }
+
+    let mut session = builder
         .with_optimization_level(GraphOptimizationLevel::Level3)
         .unwrap_or_else(|e| e.recover())
         .commit_from_file(&model_path)

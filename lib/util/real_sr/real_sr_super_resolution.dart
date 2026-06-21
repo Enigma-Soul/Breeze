@@ -91,12 +91,21 @@ class RealSrSuperResolution {
   }
 
   /// ort 外挂 onnxruntime 动态库路径（load-dynamic）。
-  /// Windows / Linux：与可执行文件同目录的 `onnxruntime.dll` / `libonnxruntime.so`
-  ///（安装包随 app 打包；开发期手动放入 exe 同目录）。
-  static String get _ortDylibPath {
+  /// - Windows / Linux：与可执行文件同目录的 `onnxruntime.dll` / `libonnxruntime.so`
+  ///   （安装包随 app 打包；开发期手动放入 exe 同目录）。
+  /// - Android：`nativeLibraryDir/libonnxruntime.so`（.so 随 jniLibs 打包）。
+  static Future<String> get _ortDylibPath async {
+    if (Platform.isAndroid) {
+      return p.join(await _androidNativeLibDir, 'libonnxruntime.so');
+    }
     final exeDir = p.dirname(Platform.resolvedExecutable);
     final name = Platform.isWindows ? 'onnxruntime.dll' : 'libonnxruntime.so';
     return p.join(exeDir, name);
+  }
+
+  /// Android `nativeLibraryDir`（经 MethodChannel 取；ort / ncnn 后端拼 .so 路径共用）。
+  static Future<String> get _androidNativeLibDir async {
+    return await _channel.invokeMethod<String>('getNativeLibDir') ?? '';
   }
 
   /// 当前设备是否支持内置超分。
@@ -107,12 +116,17 @@ class RealSrSuperResolution {
   /// - Windows / Linux：ncnn 可执行文件，或 ort 的 .onnx 模型 + onnxruntime 动态库（取决于后端）
   static Future<bool> get isAvailable async {
     if (Platform.isAndroid) {
-      try {
-        final androidInfo = await DeviceInfoPlugin().androidInfo;
-        return androidInfo.supportedAbis.contains('arm64-v8a');
-      } catch (_) {
-        return false;
+      if (!await _isAndroidArm64) return false;
+      final backend = await RealSrSettings.loadAndroidBackend();
+      if (backend == RealSrSettings.androidBackendOrt) {
+        // ort：.onnx 模型 + libonnxruntime.so 都要就绪。
+        return File(await _ortModelPath).existsSync() &&
+            File(await _ortDylibPath).existsSync();
       }
+      // ncnn：查可执行库（当前未随 jniLibs 分发，预期 false）。
+      return File(
+        p.join(await _androidNativeLibDir, 'librealcugan_ncnn.so'),
+      ).existsSync();
     }
 
     if (Platform.isIOS) {
@@ -135,10 +149,20 @@ class RealSrSuperResolution {
       }
       // ort 后端：.onnx 模型 + onnxruntime 动态库 都要就绪。
       return File(await _ortModelPath).existsSync() &&
-          File(_ortDylibPath).existsSync();
+          File(await _ortDylibPath).existsSync();
     }
 
     return false;
+  }
+
+  /// Android 是否 arm64-v8a（ort / ncnn 后端共用前置条件）。
+  static Future<bool> get _isAndroidArm64 async {
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      return androidInfo.supportedAbis.contains('arm64-v8a');
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 检查 iOS / macOS 的 CoreML 模型是否已就绪。
@@ -197,6 +221,16 @@ class RealSrSuperResolution {
       await CoreMLModelLoader.prepareModel(
         CoreMLModelConfig.families[1].variants.first.fileName,
       );
+      return;
+    }
+
+    // Android：ort 后端下 Real-CUGAN .onnx；ncnn 模型随 flutter_assets 内置
+    //（extractAssets 解包），无需下载。
+    if (Platform.isAndroid) {
+      final backend = await RealSrSettings.loadAndroidBackend();
+      if (backend == RealSrSettings.androidBackendOrt) {
+        await _downloadOrtModel(force: force, onProgress: onProgress);
+      }
       return;
     }
 
@@ -406,28 +440,27 @@ class RealSrSuperResolution {
       }
 
       if (Platform.isAndroid) {
-        final inputExtension = rawExt.startsWith('.')
-            ? rawExt.substring(1)
-            : rawExt;
-
-        final result = await _channel
-            .invokeMapMethod<String, dynamic>('upscale', {
-              'inputPath': inputPath,
-              'outputPath': out,
-              'inputExtension': inputExtension.isEmpty ? 'png' : inputExtension,
-              'executable': executable,
-              'modelDir': modelDir,
-              'scale': scale,
-              'noiseLevel': noiseLevel.value,
-              'tileSize': tileSize,
-              'syncGapMode': syncGapMode,
-            });
-
-        if (result == null) {
-          throw StateError('Platform channel returned null');
+        final backend = await RealSrSettings.loadAndroidBackend();
+        if (backend == RealSrSettings.androidBackendOrt) {
+          await upscaleOrt(
+            inputPath: inputPath,
+            outputPath: out,
+            modelPath: await _ortModelPath,
+            dylibPath: await _ortDylibPath,
+          );
+        } else {
+          await _upscaleAndroidNcnn(
+            inputPath: inputPath,
+            outputPath: out,
+            rawExt: rawExt,
+            executable: executable,
+            modelDir: modelDir,
+            scale: scale,
+            noiseLevel: noiseLevel,
+            tileSize: tileSize,
+            syncGapMode: syncGapMode,
+          );
         }
-
-        logger.d('Upscaling result: $result');
       } else if (Platform.isIOS) {
         final backend = await RealSrSettings.loadIosBackend();
         if (backend == RealSrSettings.iosBackendOrt) {
@@ -455,7 +488,7 @@ class RealSrSuperResolution {
             inputPath: inputPath,
             outputPath: out,
             modelPath: await _ortModelPath,
-            dylibPath: _ortDylibPath,
+            dylibPath: await _ortDylibPath,
           );
         }
       }
@@ -505,6 +538,37 @@ class RealSrSuperResolution {
       showErrorToast('ort 超分失败: $stderr');
       throw StateError('ort 超分失败: $stderr');
     }
+  }
+
+  /// Android ncnn 后端：通过 MethodChannel 调 MainActivity 起子进程跑 realcugan-ncnn。
+  static Future<void> _upscaleAndroidNcnn({
+    required String inputPath,
+    required String outputPath,
+    required String rawExt,
+    required String executable,
+    required String modelDir,
+    required int scale,
+    required RealSrNoiseLevel noiseLevel,
+    required int tileSize,
+    required int syncGapMode,
+  }) async {
+    final inputExtension =
+        rawExt.startsWith('.') ? rawExt.substring(1) : rawExt;
+    final result = await _channel.invokeMapMethod<String, dynamic>('upscale', {
+      'inputPath': inputPath,
+      'outputPath': outputPath,
+      'inputExtension': inputExtension.isEmpty ? 'png' : inputExtension,
+      'executable': executable,
+      'modelDir': modelDir,
+      'scale': scale,
+      'noiseLevel': noiseLevel.value,
+      'tileSize': tileSize,
+      'syncGapMode': syncGapMode,
+    });
+    if (result == null) {
+      throw StateError('Platform channel returned null');
+    }
+    logger.d('Android ncnn upscaling result: $result');
   }
 
   /// 桌面端通过 Process.run 调用 realcugan-ncnn-vulkan（ncnn 后端）。

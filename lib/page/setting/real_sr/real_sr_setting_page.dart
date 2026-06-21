@@ -59,6 +59,9 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   /// 桌面（Windows / Linux）推理后端（ort 或上游 ncnn）。
   String _desktopBackend = RealSrSettings.desktopBackendOrt;
 
+  /// Android 推理后端（ort 或上游 ncnn）。
+  String _androidBackend = RealSrSettings.androidBackendOrt;
+
   bool _isAvailable = false;
   bool _downloading = false;
   double _downloadProgress = 0;
@@ -74,6 +77,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
     final variant = await RealSrSettings.loadCoreMLVariant(family);
     final iosBackend = await RealSrSettings.loadIosBackend();
     final desktopBackend = await RealSrSettings.loadDesktopBackend();
+    final androidBackend = await RealSrSettings.loadAndroidBackend();
 
     final results = await Future.wait([
       RealSrSettings.loadAutoUpscale(),
@@ -97,6 +101,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
       _coreMLVariant = variant;
       _iosBackend = iosBackend;
       _desktopBackend = desktopBackend;
+      _androidBackend = androidBackend;
       _loading = false;
     });
   }
@@ -151,6 +156,12 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   Future<void> _setDesktopBackend(String value) async {
     await RealSrSettings.saveDesktopBackend(value);
     setState(() => _desktopBackend = value);
+    await _refreshAvailability();
+  }
+
+  Future<void> _setAndroidBackend(String value) async {
+    await RealSrSettings.saveAndroidBackend(value);
+    setState(() => _androidBackend = value);
     await _refreshAvailability();
   }
 
@@ -394,6 +405,37 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
                   DropdownMenuItem(
                     value: RealSrSettings.desktopBackendNcnn,
                     child: Text('ncnn（上游 Vulkan）'),
+                  ),
+                ],
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+
+        // Android：推理后端选择（ort ONNX/NNAPI vs 上游 ncnn）。
+        if (Platform.isAndroid)
+          ListTile(
+            leading: const Icon(Icons.memory_outlined),
+            title: const Text('推理后端'),
+            subtitle: const Text('ort 灵活可跑 LaMa 等；ncnn 上游'),
+            trailing: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _androidBackend,
+                icon: const Icon(Icons.expand_more),
+                onChanged: (String? value) {
+                  if (value != null) _setAndroidBackend(value);
+                },
+                items: const [
+                  DropdownMenuItem(
+                    value: RealSrSettings.androidBackendOrt,
+                    child: Text('ort（ONNX）'),
+                  ),
+                  DropdownMenuItem(
+                    value: RealSrSettings.androidBackendNcnn,
+                    child: Text('ncnn（上游）'),
                   ),
                 ],
                 style: TextStyle(

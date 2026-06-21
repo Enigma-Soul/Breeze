@@ -52,7 +52,12 @@ bytemuck = "1"
 
 # ONNX 推理（ort crate load-dynamic，外挂含 EP 的 onnxruntime 动态库；iOS 保留 onnxruntime-objc 不加 ort）
 # api-24：onnxruntime API 24 binding，补齐 vitis.rs 缺的 VitisAI 字段（ort rc.12 已知 bug）
-[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
+# EP feature 按平台开：Windows=directml、Android=nnapi、Linux 暂留 CPU（CUDA 后续）。directml 是
+# Windows-only，不能并入 linux target（ort-sys 会拉 DirectML 头/build 脚本导致 Linux 编译失败）。
+[target.'cfg(target_os = "windows")'.dependencies]
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "directml", "api-24"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
 ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "api-24"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -60,6 +65,7 @@ android_logger = "0.15.1"
 tracing-logcat = "0.1.0"
 jni = "0.22.4"
 rustls-platform-verifier = "0.7.0"
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic", "ndarray", "nnapi", "api-24"] }
 
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
 oslog = "0.2.0"

@@ -23,6 +23,7 @@ class RealSrSettings {
   static const _keyCoreMLVariant = 'realsr_coreml_variant';
   static const _keyIosBackend = 'realsr_ios_backend';
   static const _keyDesktopBackend = 'realsr_desktop_backend';
+  static const _keyAndroidBackend = 'realsr_android_backend';
 
   /// iOS 超分后端选项。
   /// - [iosBackendCoreML]：上游 CoreML（waifu2x / Real-CUGAN，原生 ANE 加速）
@@ -35,6 +36,12 @@ class RealSrSettings {
   /// - [desktopBackendOrt]：ONNX Runtime（Real-CUGAN .onnx + DirectML/CUDA EP）
   static const desktopBackendNcnn = 'ncnn';
   static const desktopBackendOrt = 'ort';
+
+  /// Android 超分后端选项。
+  /// - [androidBackendNcnn]：上游 ncnn（realcugan-ncnn，需 .so 入 jniLibs）
+  /// - [androidBackendOrt]：ONNX Runtime（Real-CUGAN .onnx + NNAPI EP）
+  static const androidBackendNcnn = 'ncnn';
+  static const androidBackendOrt = 'ort';
 
   /// 根据当前运行平台返回推荐的默认并发数。
   ///
@@ -167,5 +174,16 @@ class RealSrSettings {
   static Future<void> saveDesktopBackend(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyDesktopBackend, value);
+  }
+
+  /// Android 超分后端，默认 [androidBackendOrt]（新 ort + NNAPI，灵活可跑任意 ONNX）。
+  static Future<String> loadAndroidBackend() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyAndroidBackend) ?? androidBackendOrt;
+  }
+
+  static Future<void> saveAndroidBackend(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyAndroidBackend, value);
   }
 }

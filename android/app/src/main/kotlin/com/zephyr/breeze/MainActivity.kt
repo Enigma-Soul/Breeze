@@ -158,6 +158,10 @@ class MainActivity: FlutterFragmentActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, REALSR_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                "getNativeLibDir" -> {
+                    // ort 后端用：拼 nativeLibraryDir/libonnxruntime.so 路径传给 Rust load-dynamic。
+                    result.success(applicationInfo.nativeLibraryDir)
+                }
                 "extractAssets" -> {
                     val force = call.argument<Boolean>("force") ?: false
                     Thread {

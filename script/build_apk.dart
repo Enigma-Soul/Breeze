@@ -5,6 +5,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
+
 // ANSI 颜色代码
 const String _green = '\x1B[32m';
 const String _cyan = '\x1B[36m';
@@ -181,6 +183,75 @@ Future<Map<String, String>> _initializePaths() async {
   };
 }
 
+// ════════════════════════════════════════════════════════════════
+//  ort / NNAPI 动态库（Android ort 后端，Real-CUGAN .onnx 推理）
+// ════════════════════════════════════════════════════════════════
+
+/// ort crate 2.0.0-rc.12 绑定 onnxruntime API 24 = onnxruntime 1.21.x（任意 patch 兼容）。
+/// 与 build_windows.dart 的 _ortVersion 对齐。
+const String _ortAndroidVersion = '1.21.0';
+
+/// onnxruntime Android release（自带 NNAPI EP），GitHub release zip。
+final String _ortAndroidZipUrl =
+    'https://github.com/microsoft/onnxruntime/releases/download/v$_ortAndroidVersion/onnxruntime-android-$_ortAndroidVersion.zip';
+
+/// 确保 android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so 就绪（ort NNAPI 后端依赖）。
+/// onnxruntime-android zip 内 .so 形如 `.../jni/arm64-v8a/libonnxruntime.so`（可能带版本前缀目录），
+/// 按后缀匹配兼容两种布局。zip 缓存到 build/bin，jniLibs 已在 .gitignore（不入库）。
+Future<void> _ensureOrtAndroidLib(String projectRoot) async {
+  final sep = Platform.pathSeparator;
+  final jniLibsArm64 =
+      '$projectRoot${sep}android${sep}app${sep}src${sep}main${sep}jniLibs${sep}arm64-v8a${sep}libonnxruntime.so';
+
+  if (await File(jniLibsArm64).exists()) {
+    _printColor('使用本地 libonnxruntime.so（arm64-v8a）', _green);
+    return;
+  }
+
+  final binDir = '$projectRoot${sep}build${sep}bin';
+  await Directory(binDir).create(recursive: true);
+  final cachePath =
+      '$binDir${sep}onnxruntime-android-$_ortAndroidVersion.zip';
+
+  if (!await File(cachePath).exists()) {
+    _printColor('下载 onnxruntime-android（NNAPI）: $_ortAndroidZipUrl', _cyan);
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse(_ortAndroidZipUrl));
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        throw Exception(
+          '下载 onnxruntime-android 失败，HTTP ${response.statusCode}',
+        );
+      }
+      final sink = File(cachePath).openWrite();
+      await response.pipe(sink);
+      final mb =
+          (await File(cachePath).length() / 1048576).toStringAsFixed(1);
+      _printColor('下载完成: $mb MB', _green);
+    } finally {
+      client.close();
+    }
+  }
+
+  _printColor('解压 libonnxruntime.so（arm64-v8a）...', _cyan);
+  final zipBytes = await File(cachePath).readAsBytes();
+  final archive = ZipDecoder().decodeBytes(zipBytes);
+  ArchiveFile? soEntry;
+  for (final f in archive) {
+    if (f.name.endsWith('arm64-v8a/libonnxruntime.so')) {
+      soEntry = f;
+      break;
+    }
+  }
+  if (soEntry == null) {
+    throw Exception('onnxruntime-android zip 中未找到 arm64-v8a/libonnxruntime.so');
+  }
+  await File(jniLibsArm64).parent.create(recursive: true);
+  await File(jniLibsArm64).writeAsBytes(soEntry.content as List<int>);
+  _printColor('已写入: $jniLibsArm64', _green);
+}
+
 Future<void> main(List<String> args) async {
   final Map<String, String> env = await _injectBindgenEnv();
   late final Map<String, String> paths;
@@ -227,6 +298,9 @@ Future<void> main(List<String> args) async {
 
     _printColor('Flutter 命令: $flutterExecutable', _green);
     _printColor('工作目录: $projectRoot', _yellow);
+
+    // 确保 ort NNAPI 动态库（arm64-v8a）入 jniLibs（ort 超分后端依赖）。
+    await _ensureOrtAndroidLib(projectRoot);
 
     if (isDebugMode) {
       _printColor('\n⚡ 启动快速调试构建 (仅限 arm64 & x64)...', _magenta);
