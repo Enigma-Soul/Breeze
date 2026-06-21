@@ -50,7 +50,12 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y git-crypt
           echo "$GIT_CRYPT_KEY" | base64 -d > ./git-crypt-key
-          git-crypt unlock ./git-crypt-key && rm ./git-crypt-key
+          if [ -s ./git-crypt-key ] && git-crypt unlock ./git-crypt-key; then
+            rm ./git-crypt-key
+          else
+            # fork 无 GIT_CRYPT_KEY：删掉工作区里的加密签名文件，Debug 构建不读它们
+            rm -f ./git-crypt-key android/key.properties android/Breeze-key.keystore
+          fi
 
       - name: 设置 Java 21 & SDK
         uses: actions/setup-java@v5
@@ -128,9 +133,9 @@ jobs:
         run: |
           fvm dart run script/download_realsr_assets.dart
 
-      - name: 运行 Android 构建脚本
+      - name: 运行 Android 构建脚本（Debug，验 ort/Rust 编译，无需签名密钥）
         run: |
-          fvm dart ./script/build_apk.dart
+          fvm dart ./script/build_apk.dart debug
 
       - name: 上传 Android 产物
         uses: actions/upload-artifact@v6
@@ -442,8 +447,6 @@ jobs:
                 $_ += "      target.build_configurations.each do |config|\n        config.build_settings[\"MACOSX_DEPLOYMENT_TARGET\"] = \"11.0\"\n      end\n"
               end
             ' macos/Podfile
-            # onnxruntime-coreml 等新 pod 需刷新 spec 仓库，否则 "specs repository too out-of-date"
-            pod repo update
           fi
 
       - name: 编译 macOS 产物
