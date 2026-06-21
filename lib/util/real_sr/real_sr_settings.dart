@@ -21,6 +21,13 @@ class RealSrSettings {
   static const _keyTileSize = 'realsr_tile_size';
   static const _keyCoreMLFamily = 'realsr_coreml_family';
   static const _keyCoreMLVariant = 'realsr_coreml_variant';
+  static const _keyIosBackend = 'realsr_ios_backend';
+
+  /// iOS 超分后端选项。
+  /// - [iosBackendCoreML]：上游 CoreML（waifu2x / Real-CUGAN，原生 ANE 加速）
+  /// - [iosBackendOrt]：ONNX Runtime（Real-CUGAN .onnx + CoreML EP，灵活可跑 LaMa 等 DFT 模型）
+  static const iosBackendCoreML = 'coreml';
+  static const iosBackendOrt = 'ort';
 
   /// 根据当前运行平台返回推荐的默认并发数。
   ///
@@ -130,5 +137,17 @@ class RealSrSettings {
   static Future<void> saveCoreMLVariant(CoreMLModelVariant value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyCoreMLVariant, value.fileName);
+  }
+
+  /// iOS 超分后端类型，默认 [iosBackendCoreML]（与上游 defaultFamily 一致）。
+  /// 仅 iOS 生效；macOS 只用 CoreML。
+  static Future<String> loadIosBackend() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyIosBackend) ?? iosBackendCoreML;
+  }
+
+  static Future<void> saveIosBackend(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyIosBackend, value);
   }
 }

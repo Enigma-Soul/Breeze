@@ -217,16 +217,24 @@ import ImageIO
         AppDelegate.ortEnv = try ORTEnv(loggingLevel: .warning)
       }
 
-      // 2. 初始化 ORTSession（懒加载，带 CoreML EP）
+      // 2. 初始化 ORTSession（懒加载，带 CoreML EP）。
+      //    CoreML EP 独立启用：失败则 fallback CPU（仅日志，不中断），
+      //    便于真机区分 ANE 是否真生效（CoreML EP 命门验证）。
       if AppDelegate.ortSession == nil {
         guard let modelPath = findModelPath() else {
           completion(failureResult("模型文件不存在"))
           return
         }
         let opts = try ORTSessionOptions()
-        try opts.appendExecutionProvider("coreml", providerOptions: [:])
+        do {
+          try opts.appendExecutionProvider("coreml", providerOptions: [:])
+          NSLog("[ORT] CoreML EP 已启用")
+        } catch {
+          NSLog("[ORT] CoreML EP 启用失败，fallback CPU: \(error)")
+        }
         try opts.setGraphOptimizationLevel(.all)
         AppDelegate.ortSession = try ORTSession(env: AppDelegate.ortEnv!, modelPath: modelPath, sessionOptions: opts)
+        NSLog("[ORT] session created")
       }
 
       // 3. 读取输入图像

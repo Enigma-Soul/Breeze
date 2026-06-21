@@ -37,6 +37,17 @@ class RealSrSuperResolution {
   static const String _binaryRepoBaseUrl =
       'https://github.com/deretame/breeze-binary/raw/main';
 
+  /// iOS ort 后端（Real-CUGAN .onnx tile）的 GitHub release 地址。
+  static const String _iosOnnxReleaseBaseUrl =
+      'https://github.com/Enigma-Soul/Breeze/releases/download/realsr-ios-onnx-v2';
+
+  /// iOS ort 后端模型压缩包名。
+  static const String _iosOnnxArchive = 'realsr-ios-onnx-v2.7z';
+
+  /// ort 后端 Real-CUGAN tile 模型相对路径（相对 [_modelDirectory]）。
+  static const String _iosOnnxModelRel =
+      'realcugan-onnx/up2x-conservative-2x-tile.onnx';
+
   /// 最大并发超分任务数。
   ///
   /// - 桌面端（Windows / Linux / macOS）默认 2，高端显卡可设更高。
@@ -72,6 +83,13 @@ class RealSrSuperResolution {
     return p.join(await _modelDirectory, _executableName);
   }
 
+  /// iOS ort 后端模型绝对路径：
+  /// `<getFilePath()>/super_resolution/realcugan-onnx/up2x-conservative-2x-tile.onnx`
+  ///（与 AppDelegate `findModelPath()` 一致）。
+  static Future<String> get _ortModelPath async {
+    return p.join(await _modelDirectory, _iosOnnxModelRel);
+  }
+
   /// 当前设备是否支持内置超分。
   ///
   /// - Android：arm64-v8a
@@ -87,7 +105,16 @@ class RealSrSuperResolution {
       }
     }
 
-    if (Platform.isIOS || Platform.isMacOS) {
+    if (Platform.isIOS) {
+      // ort 后端查 .onnx 模型；CoreML 后端查 .mlmodel/.mlpackage。
+      final backend = await RealSrSettings.loadIosBackend();
+      if (backend == RealSrSettings.iosBackendOrt) {
+        return File(await _ortModelPath).existsSync();
+      }
+      return _isCoreMLAvailable;
+    }
+
+    if (Platform.isMacOS) {
       return _isCoreMLAvailable;
     }
 
@@ -128,6 +155,14 @@ class RealSrSuperResolution {
     void Function(int received, int total)? onProgress,
     bool force = false,
   }) async {
+    if (Platform.isIOS) {
+      final backend = await RealSrSettings.loadIosBackend();
+      if (backend == RealSrSettings.iosBackendOrt) {
+        await _downloadOrtModel(force: force, onProgress: onProgress);
+        return;
+      }
+    }
+
     if (Platform.isIOS || Platform.isMacOS) {
       final tempDir = await getTemporaryDirectory();
       final modelsDir = Directory(p.join(tempDir.path, 'coreml_models'));
@@ -190,6 +225,41 @@ class RealSrSuperResolution {
         }
       }
 
+      _missingModelNotified = false;
+      showSuccessToast('模型下载完成');
+    } finally {
+      try {
+        await File(archivePath).delete();
+      } catch (_) {}
+    }
+  }
+
+  /// iOS ort 后端下载 Real-CUGAN .onnx tile 模型（release realsr-ios-onnx-v2）。
+  static Future<void> _downloadOrtModel({
+    required bool force,
+    void Function(int received, int total)? onProgress,
+  }) async {
+    final destDir = await _modelDirectory;
+    if (force && Directory(destDir).existsSync()) {
+      await Directory(destDir).delete(recursive: true);
+    }
+    await Directory(destDir).create(recursive: true);
+
+    final cachePath = await getCachePath();
+    final archivePath = p.join(cachePath, _iosOnnxArchive);
+
+    try {
+      if (force && File(archivePath).existsSync()) {
+        await File(archivePath).delete();
+      }
+      await dio.download(
+        '$_iosOnnxReleaseBaseUrl/$_iosOnnxArchive',
+        archivePath,
+        onReceiveProgress: (received, total) {
+          if (total > 0) onProgress?.call(received, total);
+        },
+      );
+      await decompress7Z(archivePath: archivePath, destPath: destDir);
       _missingModelNotified = false;
       showSuccessToast('模型下载完成');
     } finally {
@@ -334,7 +404,14 @@ class RealSrSuperResolution {
         }
 
         logger.d('Upscaling result: $result');
-      } else if (Platform.isIOS || Platform.isMacOS) {
+      } else if (Platform.isIOS) {
+        final backend = await RealSrSettings.loadIosBackend();
+        if (backend == RealSrSettings.iosBackendOrt) {
+          await _upscaleOrt(inputPath: inputPath, outputPath: out);
+        } else {
+          await _upscaleCoreML(inputPath: inputPath, outputPath: out);
+        }
+      } else if (Platform.isMacOS) {
         await _upscaleCoreML(inputPath: inputPath, outputPath: out);
       } else {
         await _upscaleCli(
@@ -370,6 +447,22 @@ class RealSrSuperResolution {
       modelType: 'multiarray',
       config: variant.config,
     );
+  }
+
+  /// iOS ort 后端：通过 `realsr_super_resolution` channel 调 AppDelegate 的
+  /// ORTSession（Real-CUGAN .onnx + CoreML EP）。AppDelegate 仅读 inputPath/outputPath。
+  static Future<void> _upscaleOrt({
+    required String inputPath,
+    required String outputPath,
+  }) async {
+    final result = await _channel.invokeMapMethod<String, dynamic>('upscale', {
+      'inputPath': inputPath,
+      'outputPath': outputPath,
+    });
+    if (result == null) {
+      throw StateError('Platform channel returned null');
+    }
+    logger.d('ORT upscale result: $result');
   }
 
   /// 桌面端通过 Process.run 调用 realcugan-ncnn-vulkan。

@@ -53,6 +53,9 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   CoreMLModelFamily _coreMLFamily = CoreMLModelConfig.defaultFamily;
   CoreMLModelVariant _coreMLVariant = CoreMLModelConfig.defaultVariant;
 
+  /// iOS 推理后端（仅 iOS 生效；macOS 固定 CoreML）。
+  String _iosBackend = RealSrSettings.iosBackendCoreML;
+
   bool _isAvailable = false;
   bool _downloading = false;
   double _downloadProgress = 0;
@@ -66,6 +69,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   Future<void> _loadSettings() async {
     final family = await RealSrSettings.loadCoreMLFamily();
     final variant = await RealSrSettings.loadCoreMLVariant(family);
+    final iosBackend = await RealSrSettings.loadIosBackend();
 
     final results = await Future.wait([
       RealSrSettings.loadAutoUpscale(),
@@ -87,6 +91,7 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
       _isAvailable = results[5] as bool;
       _coreMLFamily = family;
       _coreMLVariant = variant;
+      _iosBackend = iosBackend;
       _loading = false;
     });
   }
@@ -131,6 +136,11 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
   Future<void> _setCoreMLVariant(CoreMLModelVariant value) async {
     await RealSrSettings.saveCoreMLVariant(value);
     setState(() => _coreMLVariant = value);
+  }
+
+  Future<void> _setIosBackend(String value) async {
+    await RealSrSettings.saveIosBackend(value);
+    setState(() => _iosBackend = value);
   }
 
   Future<void> _downloadModel() async {
@@ -320,8 +330,41 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
         const Divider(height: 1, thickness: 0.3),
         _buildSectionTitle(context, '模型'),
 
-        // iOS / macOS：使用 CoreML，模型族 + 变体 + 分块信息。
-        if (_usesCoreML) ...[
+        // iOS：推理后端选择（CoreML 原生 ANE vs ort ONNX + CoreML EP）。
+        // macOS 固定 CoreML，不显示此项。
+        if (Platform.isIOS)
+          ListTile(
+            leading: const Icon(Icons.memory_outlined),
+            title: const Text('推理后端'),
+            subtitle: const Text('CoreML 原生 ANE 加速；ort 灵活可跑 LaMa 等'),
+            trailing: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _iosBackend,
+                icon: const Icon(Icons.expand_more),
+                onChanged: (String? value) {
+                  if (value != null) _setIosBackend(value);
+                },
+                items: const [
+                  DropdownMenuItem(
+                    value: RealSrSettings.iosBackendCoreML,
+                    child: Text('CoreML（原生）'),
+                  ),
+                  DropdownMenuItem(
+                    value: RealSrSettings.iosBackendOrt,
+                    child: Text('ort（ONNX）'),
+                  ),
+                ],
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+
+        // iOS / macOS + CoreML 后端：模型族 + 变体 + 分块信息。
+        if (_usesCoreML &&
+            _iosBackend == RealSrSettings.iosBackendCoreML) ...[
           ListTile(
             leading: const Icon(Icons.speed_outlined),
             title: const Text('模型'),
@@ -387,7 +430,17 @@ class _RealSrSettingPageState extends State<RealSrSettingPage> {
               child: const Icon(Icons.help_outline),
             ),
           ),
-        ] else
+        ] else if (Platform.isIOS &&
+            _iosBackend == RealSrSettings.iosBackendOrt)
+          // iOS ort 后端：无模型族/变体选择，仅说明。
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('ort 后端'),
+            subtitle: const Text(
+              'Real-CUGAN .onnx（realsr-ios-onnx-v2），启 CoreML EP',
+            ),
+          )
+        else
           // Android / Windows / Linux：继续使用通用降噪级别。
           ListTile(
             leading: const Icon(Icons.healing_outlined),
