@@ -289,6 +289,97 @@ Future<String> _ensureLzmaDll(String binDir) async {
 }
 
 // ════════════════════════════════════════════════════════════════
+//  ort / DirectML 动态库（Real-CUGAN ort 后端 GPU 加速）
+// ════════════════════════════════════════════════════════════════
+
+/// ort crate 2.0.0-rc.12 绑定 onnxruntime API 24 = onnxruntime 1.21.x（任意 patch 兼容）。
+const String _ortVersion = '1.21.0';
+
+/// DirectML.dll 版本（onnxruntime DirectML build 运行时 dlopen，向后兼容）。
+const String _directmlVersion = '1.15.4';
+
+/// onnxruntime DirectML build（onnxruntime.dll 含 DirectML EP），GitHub release nupkg。
+final String _ortDmlNupkgUrl =
+    'https://github.com/microsoft/onnxruntime/releases/download/v$_ortVersion/Microsoft.ML.OnnxRuntime.DirectML.$_ortVersion.nupkg';
+
+/// DirectML.dll，Microsoft.AI.DirectML NuGet（flat-container 直链）。
+final String _directmlNupkgUrl =
+    'https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/$_directmlVersion/microsoft.ai.directml.$_directmlVersion.nupkg';
+
+/// 确保 [releaseDir] 含 onnxruntime.dll + DirectML.dll（ort 超分后端依赖）。
+/// nupkg 缓存到 [binDir]，避免重复下载；dll 复制到 [releaseDir]。
+Future<void> _ensureOrtDlls(String releaseDir, String binDir) async {
+  final sep = Platform.pathSeparator;
+  final ortDll = '$releaseDir${sep}onnxruntime.dll';
+  final dmlDll = '$releaseDir${sep}DirectML.dll';
+
+  if (await File(ortDll).exists() && await File(dmlDll).exists()) {
+    _printColor('使用本地 ort/DirectML dll', _green);
+    return;
+  }
+
+  await _extractFromNupkg(
+    url: _ortDmlNupkgUrl,
+    entryPath: 'runtimes/win-x64/native/onnxruntime.dll',
+    destPath: ortDll,
+    cachePath: '$binDir${sep}ort-dml-$_ortVersion.nupkg',
+    label: 'onnxruntime.dll（DirectML build）',
+  );
+  await _extractFromNupkg(
+    url: _directmlNupkgUrl,
+    entryPath: 'bin/x64-win/DirectML.dll',
+    destPath: dmlDll,
+    cachePath: '$binDir${sep}directml-$_directmlVersion.nupkg',
+    label: 'DirectML.dll',
+  );
+}
+
+/// 下载 [url] 的 nupkg 到 [cachePath]（已存在则复用），解压取 [entryPath] 写到 [destPath]。
+Future<void> _extractFromNupkg({
+  required String url,
+  required String entryPath,
+  required String destPath,
+  required String cachePath,
+  required String label,
+}) async {
+  if (await File(destPath).exists()) return;
+
+  if (!await File(cachePath).exists()) {
+    _printColor('下载 $label: $url', _cyan);
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        throw Exception('下载 $label 失败，HTTP ${response.statusCode}');
+      }
+      final sink = File(cachePath).openWrite();
+      await response.pipe(sink);
+      final mb = (await File(cachePath).length() / 1048576).toStringAsFixed(1);
+      _printColor('下载完成: $mb MB', _green);
+    } finally {
+      client.close();
+    }
+  }
+
+  _printColor('解压 $label ...', _cyan);
+  final zipBytes = await File(cachePath).readAsBytes();
+  final archive = ZipDecoder().decodeBytes(zipBytes);
+  ArchiveFile? entry;
+  for (final f in archive) {
+    if (f.name == entryPath) {
+      entry = f;
+      break;
+    }
+  }
+  if (entry == null) {
+    throw Exception('nupkg 中未找到 $entryPath');
+  }
+  await File(destPath).writeAsBytes(entry.content as List<int>);
+  _printColor('已写入: $destPath', _green);
+}
+
+// ════════════════════════════════════════════════════════════════
 //  TAR 打包
 // ════════════════════════════════════════════════════════════════
 
@@ -403,6 +494,11 @@ Future<void> main(List<String> args) async {
     if (!await releaseDir.exists()) {
       throw Exception('构建产物不存在: $releaseDirPath');
     }
+
+    // 确保 ort / DirectML 动态库（Real-CUGAN ort 后端 GPU 加速）
+    _printColor('--- (1.5/4) 确保 ort/DirectML 动态库 ---', _cyan);
+    await _ensureOrtDlls(releaseDirPath, binDir);
+    print('');
 
     if (shouldPackageInstaller) {
       // ═══ 第 2 步：tar + xz 压缩（FFI） ═══
