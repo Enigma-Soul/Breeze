@@ -11,6 +11,7 @@ import 'api/memory.dart';
 import 'api/qjs.dart';
 import 'api/simple.dart';
 import 'api/system.dart';
+import 'api/upscale.dart';
 import 'api/user_utils.dart';
 import 'api/webdav.dart';
 import 'compressed/compressed.dart';

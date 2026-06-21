@@ -18,8 +18,10 @@ const OUTPUT_SIZE: usize = CROP_SIZE * 2; // 256
 /// ort 超分：读 input_path 图片 → Real-CUGAN tile 推理 → 写 output_path（2x PNG）。
 ///
 /// [dylib_path] 外挂 onnxruntime 动态库路径（load-dynamic）。
+///
+/// 命名 `upscale_ort`（→ Dart `upscaleOrt`）避免与调用方 `upscale` 方法同名递归。
 #[frb]
-pub fn upscale(
+pub fn upscale_ort(
     input_path: String,
     output_path: String,
     model_path: String,

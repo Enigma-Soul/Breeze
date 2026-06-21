@@ -27,7 +27,7 @@
 // Section: imports
 
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
-use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
 use flutter_rust_bridge::{Handler, IntoIntoDart};
 
 // Section: boilerplate
@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1072925560;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 847595969;
 
 // Section: executor
 
@@ -2299,6 +2299,49 @@ fn wire__crate__api__simple__stream_test_impl(
         },
     )
 }
+fn wire__crate__api__upscale__upscale_ort_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "upscale_ort",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_input_path = <String>::sse_decode(&mut deserializer);
+            let api_output_path = <String>::sse_decode(&mut deserializer);
+            let api_model_path = <String>::sse_decode(&mut deserializer);
+            let api_dylib_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::upscale::upscale_ort(
+                            api_input_path,
+                            api_output_path,
+                            api_model_path,
+                            api_dylib_path,
+                        )?;
+                        Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__webdav__webdav_delete_remote_files_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3239,37 +3282,38 @@ fn pde_ffi_dispatcher_primary_impl(
             data_len,
         ),
         60 => wire__crate__api__simple__stream_test_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__webdav__webdav_delete_remote_files_impl(
+        61 => wire__crate__api__upscale__upscale_ort_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__webdav__webdav_delete_remote_files_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        62 => {
+        63 => {
             wire__crate__api__webdav__webdav_download_file_impl(port, ptr, rust_vec_len, data_len)
         }
-        63 => {
+        64 => {
             wire__crate__api__webdav__webdav_download_text_impl(port, ptr, rust_vec_len, data_len)
         }
-        64 => wire__crate__api__webdav__webdav_ensure_remote_ready_impl(
+        65 => wire__crate__api__webdav__webdav_ensure_remote_ready_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        65 => wire__crate__api__webdav__webdav_list_remote_data_files_impl(
+        66 => wire__crate__api__webdav__webdav_list_remote_data_files_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        66 => {
+        67 => {
             wire__crate__api__webdav__webdav_test_connection_impl(port, ptr, rust_vec_len, data_len)
         }
-        67 => wire__crate__api__webdav__webdav_upload_bytes_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__webdav__webdav_upload_text_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__simple__zstd_compress_bytes_impl(port, ptr, rust_vec_len, data_len),
-        70 => {
+        68 => wire__crate__api__webdav__webdav_upload_bytes_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__webdav__webdav_upload_text_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__simple__zstd_compress_bytes_impl(port, ptr, rust_vec_len, data_len),
+        71 => {
             wire__crate__api__simple__zstd_decompress_bytes_impl(port, ptr, rust_vec_len, data_len)
         }
         _ => unreachable!(),
@@ -3694,7 +3738,7 @@ mod io {
     use flutter_rust_bridge::for_generated::byteorder::{
         NativeEndian, ReadBytesExt, WriteBytesExt,
     };
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
@@ -3718,7 +3762,7 @@ mod web {
     };
     use flutter_rust_bridge::for_generated::wasm_bindgen;
     use flutter_rust_bridge::for_generated::wasm_bindgen::prelude::*;
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
