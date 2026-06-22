@@ -5,7 +5,6 @@ on:
     branches:
       - main
       - feat-ios-phase3 # 临时：验证 Phase 3 Swift 推理，合并前移除
-      - feat-cross-platform-ort # 临时：验证跨平台 ort（Android/Win/Linux/macOS），合并前移除
   workflow_dispatch:
 
 permissions:
@@ -50,12 +49,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y git-crypt
           echo "$GIT_CRYPT_KEY" | base64 -d > ./git-crypt-key
-          if [ -s ./git-crypt-key ] && git-crypt unlock ./git-crypt-key; then
-            rm ./git-crypt-key
-          else
-            # fork 无 GIT_CRYPT_KEY：删掉工作区里的加密签名文件，Debug 构建不读它们
-            rm -f ./git-crypt-key android/key.properties android/Breeze-key.keystore
-          fi
+          git-crypt unlock ./git-crypt-key && rm ./git-crypt-key
 
       - name: 设置 Java 21 & SDK
         uses: actions/setup-java@v5
@@ -133,9 +127,9 @@ jobs:
         run: |
           fvm dart run script/download_realsr_assets.dart
 
-      - name: 运行 Android 构建脚本（Debug，验 ort/Rust 编译，无需签名密钥）
+      - name: 运行 Android 构建脚本
         run: |
-          fvm dart ./script/build_apk.dart debug
+          fvm dart ./script/build_apk.dart
 
       - name: 上传 Android 产物
         uses: actions/upload-artifact@v6
@@ -429,14 +423,6 @@ jobs:
         with:
           node-version: 22
 
-      - name: 缓存 CocoaPods
-        uses: actions/cache@v5
-        with:
-          path: ~/Library/Caches/CocoaPods
-          key: macos-pods-${{ matrix.arch }}-${{ hashFiles('macos/Podfile', 'macos/Podfile.lock') }}
-          restore-keys: |
-            macos-pods-${{ matrix.arch }}-
-
       - name: 拉取依赖 & 修复 Podfile
         run: |
           fvm flutter pub get
@@ -499,7 +485,6 @@ jobs:
   # 5. iOS 构建 (免签)
   # ══════════════════════════════════════════
   build-ios:
-    if: github.ref != 'refs/heads/feat-cross-platform-ort' # 跨平台 ort 分支跳过 iOS（已 feat-ios-phase3 验证，省时间）
     runs-on: macos-latest
     env:
       CARGO_HOME: ${{ github.workspace }}/.cargo
