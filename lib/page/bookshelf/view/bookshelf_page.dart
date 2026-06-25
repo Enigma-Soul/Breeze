@@ -82,7 +82,7 @@ class _BookshelfPageContentState extends State<_BookshelfPageContent>
         body: TabBarView(
           controller: _tabController,
           children: [
-            LocalShelfPage(
+            FolderShelfPage(
               mode: ShelfPageMode.favorite,
               refreshSignal: _refreshSignals[0],
             ),
@@ -90,7 +90,7 @@ class _BookshelfPageContentState extends State<_BookshelfPageContent>
               mode: ShelfPageMode.history,
               refreshSignal: _refreshSignals[1],
             ),
-            LocalShelfPage(
+            FolderShelfPage(
               mode: ShelfPageMode.download,
               refreshSignal: _refreshSignals[2],
             ),
@@ -670,18 +670,20 @@ class _BookshelfFilterDialogState extends State<_BookshelfFilterDialog> {
       title: const Text('筛选'),
       content: SizedBox(
         width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSortSection(context),
-            const SizedBox(height: 16),
-            if (_showFolderSection) ...[
-              _buildFolderSection(context),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSortSection(context),
               const SizedBox(height: 16),
+              if (_showFolderSection) ...[
+                _buildFolderSection(context),
+                const SizedBox(height: 16),
+              ],
+              _buildSourceSection(context),
             ],
-            _buildSourceSection(context),
-          ],
+          ),
         ),
       ),
       actions: [

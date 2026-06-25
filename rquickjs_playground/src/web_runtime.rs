@@ -1,4 +1,4 @@
-use aes::cipher::BlockDecrypt;
+use aes::cipher::{BlockDecrypt, BlockEncrypt};
 use aes::{Aes128, Aes192, Aes256};
 use aes_gcm::{
     Aes128Gcm, Aes256Gcm, Nonce,
@@ -24,26 +24,21 @@ use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-#[cfg(target_os = "macos")]
-use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, TryRecvError};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use filetime::{FileTime, set_file_times};
 use getrandom::fill as random_fill;
 use hmac::{Hmac, Mac};
 use pbkdf2::pbkdf2_hmac;
 use reqwest::multipart::{Form as MultipartForm, Part as MultipartPart};
 use reqwest::{Client, Method, Proxy};
+use rquickjs::{Ctx, Function, function::Func};
 use sha1::Sha1;
 use sha2::{Digest, Sha256, Sha512};
-#[cfg(windows)]
-use windows_registry::CURRENT_USER;
-
-use filetime::{FileTime, set_file_times};
-use rquickjs::{Ctx, Function, function::Func};
 use tokio::net::lookup_host;
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
@@ -338,6 +333,7 @@ pub fn install_host_bindings(
         globals.set("__fs_task_drop", Func::from(fs_task_drop))?;
     }
     globals.set("__sourcemap_lookup", Func::from(sourcemap_lookup))?;
+    crate::html::js_binding::install(ctx)?;
     Ok(())
 }
 
@@ -403,7 +399,6 @@ static BRIDGE_ROUTE_ASYNC_HANDLERS: OnceLock<Mutex<HashMap<String, BridgeRouteAs
 static BRIDGE_ROUTE_BLOCKING_HANDLERS: OnceLock<
     Mutex<HashMap<String, BridgeRouteBlockingHandler>>,
 > = OnceLock::new();
-const HTTP_SYSTEM_PROXY_REFRESH_INTERVAL: Duration = Duration::from_secs(3);
 const BRIDGE_BINARY_PROTOCOL: &str = "bridge-binary-v1";
 const BRIDGE_ARGS_JSON_MAX_BYTES_DEFAULT: usize = 8 * 1024 * 1024;
 const BRIDGE_RETURN_BINARY_MAX_BYTES_DEFAULT: usize = 32 * 1024 * 1024;
@@ -617,6 +612,53 @@ fn aes_ecb_decrypt_pkcs7_b64(payload: &[u8], key: &[u8]) -> AnyResult<Vec<u8>> {
         return Err(anyhow!("AES ECB PKCS7 填充无效"));
     }
     out.truncate(out.len() - pad_len);
+    Ok(out)
+}
+
+fn aes_ecb_encrypt_pkcs7_b64(payload: &[u8], key: &[u8]) -> AnyResult<Vec<u8>> {
+    let pad_len = 16 - (payload.len() % 16);
+    let mut out = vec![0u8; payload.len() + pad_len];
+    out[..payload.len()].copy_from_slice(payload);
+    for b in out[payload.len()..].iter_mut() {
+        *b = pad_len as u8;
+    }
+
+    match key.len() {
+        16 => {
+            let cipher =
+                Aes128::new_from_slice(key).map_err(|_| anyhow!("AES-128 密钥长度无效"))?;
+            for chunk in out.chunks_exact_mut(16) {
+                let mut block = aes::cipher::Block::<Aes128>::clone_from_slice(chunk);
+                cipher.encrypt_block(&mut block);
+                chunk.copy_from_slice(&block);
+            }
+        }
+        24 => {
+            let cipher =
+                Aes192::new_from_slice(key).map_err(|_| anyhow!("AES-192 密钥长度无效"))?;
+            for chunk in out.chunks_exact_mut(16) {
+                let mut block = aes::cipher::Block::<Aes192>::clone_from_slice(chunk);
+                cipher.encrypt_block(&mut block);
+                chunk.copy_from_slice(&block);
+            }
+        }
+        32 => {
+            let cipher =
+                Aes256::new_from_slice(key).map_err(|_| anyhow!("AES-256 密钥长度无效"))?;
+            for chunk in out.chunks_exact_mut(16) {
+                let mut block = aes::cipher::Block::<Aes256>::clone_from_slice(chunk);
+                cipher.encrypt_block(&mut block);
+                chunk.copy_from_slice(&block);
+            }
+        }
+        _ => {
+            return Err(anyhow!(
+                "AES ECB 密钥长度必须是 16/24/32 字节，当前: {}",
+                key.len()
+            ));
+        }
+    }
+
     Ok(out)
 }
 
